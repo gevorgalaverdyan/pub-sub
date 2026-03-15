@@ -5,8 +5,10 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"strings"
 
 	"github.com/joho/godotenv"
+	_ "github.com/lib/pq"
 )
 
 var DB *sql.DB
@@ -27,17 +29,17 @@ func loadEnv() *PgConfig {
 	}
 
 	return &PgConfig{
-		POSTGRES_USER:     os.Getenv("POSTGRES_USER "),
-		POSTGRES_PASSWORD: os.Getenv("POSTGRES_PASSWORD"),
-		POSTGRES_DB:       os.Getenv("POSTGRES_DB"),
-		POSTGRES_HOST:     os.Getenv("POSTGRES_HOST"),
-		POSTGRES_PORT:     os.Getenv("POSTGRES_PORT"),
+		POSTGRES_USER:     strings.TrimSpace(os.Getenv("POSTGRES_USER")),
+		POSTGRES_PASSWORD: strings.TrimSpace(os.Getenv("POSTGRES_PASSWORD")),
+		POSTGRES_DB:       strings.TrimSpace(os.Getenv("POSTGRES_DB")),
+		POSTGRES_HOST:     strings.TrimSpace(os.Getenv("POSTGRES_HOST")),
+		POSTGRES_PORT:     strings.TrimSpace(os.Getenv("POSTGRES_PORT")),
 	}
 }
 
 func (c *PgConfig) toConnectionString() string {
-	return fmt.Sprintf("host=%s port=%s user=%s password=%s dbname=%s sslmode=disable", 
-	c.POSTGRES_HOST, c.POSTGRES_PORT, c.POSTGRES_USER, c.POSTGRES_PASSWORD, c.POSTGRES_DB)
+	return fmt.Sprintf("host=%s port=%s user=%s password=%s dbname=%s sslmode=disable",
+		c.POSTGRES_HOST, c.POSTGRES_PORT, c.POSTGRES_USER, c.POSTGRES_PASSWORD, c.POSTGRES_DB)
 }
 
 func ConnectDB() {

@@ -2,6 +2,8 @@ package main
 
 import (
 	"fmt"
+	"log"
+	"pubsub/consumer"
 	"pubsub/db"
 	"pubsub/publisher"
 	"pubsub/validator"
@@ -47,14 +49,24 @@ func main() {
 		}
 	}()
 
-	go StartConsuming(validUe)
-	go StartConsuming(validCe)
+	go StartConsuming(validUe, func(e publisher.UserEvent) error {
+		return consumer.InsertUserEvent(e)
+	})
+
+	go StartConsuming(validCe, func(e publisher.CommerceEvent) error {
+		return consumer.InsertCommerceEvent(e)
+	})
 
 	select {}
 }
 
-func StartConsuming[T any](ch chan T) {
+func StartConsuming[T any](ch chan T, persist func(T) error) {
 	for event := range ch {
+		if err := persist(event); err != nil {
+			log.Printf("FAILED persisting: %v\n", err)
+			continue
+		}
+
 		fmt.Printf("✅ Received: %+v\n", event)
 	}
 }
