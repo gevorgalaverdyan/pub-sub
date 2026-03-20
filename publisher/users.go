@@ -3,6 +3,7 @@ package publisher
 import (
 	"fmt"
 	"math/rand"
+	"pubsub/metrics"
 	"time"
 )
 
@@ -24,7 +25,7 @@ type UserEvent struct {
 	Properties property  `json:"properties"`
 }
 
-func StartPublishingUsers(uQueue chan<- UserEvent) {
+func StartPublishingUsers(uQueue chan<- UserEvent, m *metrics.Metrics) {
 	for i := range 100 {
 		e := UserEvent{
 			Event:     userEvents[rand.Intn(len(userEvents))],
@@ -37,6 +38,7 @@ func StartPublishingUsers(uQueue chan<- UserEvent) {
 		}
 
 		uQueue <- e
+		m.UserEvents.Inc()
 		fmt.Printf("SENDING: %+v\n", e)
 
 		time.Sleep(time.Duration(rand.Intn(4)) * time.Second)

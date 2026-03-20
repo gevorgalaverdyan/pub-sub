@@ -3,6 +3,7 @@ package publisher
 import (
 	"fmt"
 	"math/rand"
+	"pubsub/metrics"
 	"time"
 )
 
@@ -18,7 +19,7 @@ type CommerceEvent struct {
 	Path   string `json:"path"`
 }
 
-func StartPublishingCommerce(commQueue chan<- CommerceEvent) {
+func StartPublishingCommerce(commQueue chan<- CommerceEvent, m *metrics.Metrics) {
 	for range 100 {
 		e := CommerceEvent{
 			Event:  pageEvents[rand.Intn(len(pageEvents))],
@@ -27,6 +28,7 @@ func StartPublishingCommerce(commQueue chan<- CommerceEvent) {
 		}
 
 		commQueue <- e
+		m.CommerceEvents.Inc()
 		fmt.Printf("SENDING: %+v\n", e)
 
 		time.Sleep(time.Duration(rand.Intn(4)) * time.Second)
