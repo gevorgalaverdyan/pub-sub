@@ -67,15 +67,32 @@ func main() {
 		return consumer.InsertCommerceEvent(e)
 	}, m, "commerce")
 
+	http.Handle("/prune", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err:=db.PruneDB(); err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			_, err = w.Write([]byte(err.Error()))
+			if err != nil {
+				log.Printf("Failed to write response: %v", err)
+			}
+			return 
+		}
+
+		w.WriteHeader(http.StatusOK)
+		_, err := w.Write([]byte("DB Nuked"))
+		if err != nil {
+			log.Printf("Failed to write response: %v", err)
+		}
+	}))
+
 	http.Handle("/metrics", promhttp.HandlerFor(reg, promhttp.HandlerOpts{Registry: reg}))
 	log.Fatal(http.ListenAndServe(":8080", nil))
-	select {}
+	// select {}
 }
 
 func StartConsuming[T any](ch chan T, persist func(T) error, m *metrics.Metrics, stream string) {
 	for event := range ch {
 		if err := persist(event); err != nil {
-			m.ErrorsC.WithLabelValues(stream, "persistance")
+			m.ErrorsC.WithLabelValues(stream, "persistance").Inc()
 			log.Printf("FAILED persisting: %v\n", err)
 			continue
 		}

@@ -2,6 +2,7 @@ package db
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
 	"log"
 	"os"
@@ -56,4 +57,15 @@ func ConnectDB() {
 	}
 
 	DB = db
+}
+
+func PruneDB() error {
+	if DB==nil {
+		return errors.New("DB not initialised")
+	}
+
+	query := `DELETE FROM events;`
+	_, err := DB.Exec(query)
+
+	return err
 }
