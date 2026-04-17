@@ -147,7 +147,7 @@ func main() {
 				return
 			}
 			if err := consumer.InsertUserEvent(e); err != nil {
-				m.ErrorsC.WithLabelValues("user", "persistance").Inc()
+				m.ErrorsC.WithLabelValues("user", "persistence").Inc()
 				w.WriteHeader(http.StatusInternalServerError)
 				json.NewEncoder(w).Encode(map[string]string{"error": err.Error()}) //nolint:errcheck
 				return
@@ -168,7 +168,7 @@ func main() {
 				return
 			}
 			if err := consumer.InsertCommerceEvent(e); err != nil {
-				m.ErrorsC.WithLabelValues("commerce", "persistance").Inc()
+				m.ErrorsC.WithLabelValues("commerce", "persistence").Inc()
 				w.WriteHeader(http.StatusInternalServerError)
 				json.NewEncoder(w).Encode(map[string]string{"error": err.Error()}) //nolint:errcheck
 				return
