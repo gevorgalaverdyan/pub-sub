@@ -7,10 +7,24 @@ import (
 	"log"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/joho/godotenv"
 	_ "github.com/lib/pq"
 )
+
+// Event is a flattened view of an event row joined with its properties.
+type Event struct {
+	ID        string     `json:"id"`
+	Event     string     `json:"event"`
+	UserID    string     `json:"user_id"`
+	Timestamp *time.Time `json:"timestamp,omitempty"`
+	Path      *string    `json:"path,omitempty"`
+	Type      string     `json:"type"`
+	CreatedAt time.Time  `json:"created_at"`
+	Total     *float64   `json:"total,omitempty"`
+	Page      *string    `json:"page,omitempty"`
+}
 
 var DB *sql.DB
 
@@ -60,7 +74,7 @@ func ConnectDB() {
 }
 
 func PruneDB() error {
-	if DB==nil {
+	if DB == nil {
 		return errors.New("DB not initialised")
 	}
 
@@ -68,4 +82,53 @@ func PruneDB() error {
 	_, err := DB.Exec(query)
 
 	return err
+}
+
+// QueryEvents returns the most recent `limit` events joined with their properties.
+func QueryEvents(limit int) ([]Event, error) {
+	if DB == nil {
+		return nil, errors.New("DB not initialised")
+	}
+
+	rows, err := DB.Query(`
+		SELECT e.id, e.event, e.user_id, e.timestamp, e.path, e.type, e.created_at,
+		       p.total, p.page
+		FROM events e
+		LEFT JOIN properties p ON e.id = p.event_id
+		ORDER BY e.created_at DESC
+		LIMIT $1`, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var events []Event
+	for rows.Next() {
+		var e Event
+		var timestamp sql.NullTime
+		var path sql.NullString
+		var total sql.NullFloat64
+		var page sql.NullString
+
+		if err := rows.Scan(&e.ID, &e.Event, &e.UserID, &timestamp, &path, &e.Type, &e.CreatedAt, &total, &page); err != nil {
+			return nil, err
+		}
+
+		if timestamp.Valid {
+			e.Timestamp = &timestamp.Time
+		}
+		if path.Valid {
+			e.Path = &path.String
+		}
+		if total.Valid {
+			e.Total = &total.Float64
+		}
+		if page.Valid {
+			e.Page = &page.String
+		}
+
+		events = append(events, e)
+	}
+
+	return events, nil
 }
