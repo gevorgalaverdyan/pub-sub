@@ -35,6 +35,8 @@ Small event-processing project that simulates multiple publishers, validates eve
 ├── db/
 │   ├── db.go
 │   └── seed.sql
+├── frontend/
+│   └── index.html        ← browser dashboard
 ├── publisher/
 │   ├── users.go
 │   ├── giberish.go
@@ -155,6 +157,44 @@ You should see a mix of logs:
 - `✅ Received ...` for persisted valid events
 
 Stop with `Ctrl+C`.
+
+## Frontend dashboard
+
+Once the application is running, open **http://localhost:8080** in your browser.
+
+The dashboard provides:
+
+| Feature | Description |
+|---------|-------------|
+| **Pipeline diagram** | Visual overview of the Publisher → Validator → Consumer → PostgreSQL flow |
+| **Live stats** | Counts of total, user, and commerce events refreshed every 2 seconds |
+| **Live event feed** | Table of the 50 most recent stored events, auto-refreshed |
+| **Manual publisher** | Form to craft and submit your own user or commerce events; invalid submissions are rejected with the validation error |
+| **Prune DB** | Button to delete all stored events so you can start fresh |
+
+### HTTP API endpoints
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/` | Frontend dashboard (HTML) |
+| `GET` | `/events` | Returns the 50 most recent events as JSON |
+| `POST` | `/publish` | Validates and persists a manually submitted event |
+| `GET` | `/prune` | Deletes all events from the database |
+| `GET` | `/metrics` | Prometheus metrics |
+
+#### `POST /publish` request body
+
+```json
+{
+  "type":    "user",
+  "event":   "user.signed_up",
+  "user_id": "user_001",
+  "total":   49.99,
+  "page":    "/home"
+}
+```
+
+For commerce events use `"type": "commerce"` and provide a `"path"` field instead of `total`/`page`.
 
 ## Current behavior notes
 

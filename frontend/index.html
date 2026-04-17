@@ -1,0 +1,646 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Pub/Sub Event Pipeline</title>
+  <style>
+    /* ── Reset & base ─────────────────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:        #0f1117;
+      --surface:   #1a1d27;
+      --border:    #2a2d3e;
+      --text:      #e2e8f0;
+      --muted:     #8892a4;
+      --user:      #3b82f6;
+      --user-dim:  #1e3a5f;
+      --commerce:  #10b981;
+      --comm-dim:  #064e3b;
+      --error:     #ef4444;
+      --err-dim:   #450a0a;
+      --success:   #22c55e;
+      --warn:      #f59e0b;
+      --radius:    10px;
+    }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      font-size: 14px;
+      line-height: 1.6;
+      min-height: 100vh;
+    }
+
+    a { color: var(--user); text-decoration: none; }
+
+    /* ── Layout helpers ───────────────────────────────────────── */
+    .container { max-width: 1100px; margin: 0 auto; padding: 0 20px; }
+
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 20px;
+    }
+
+    /* ── Header ───────────────────────────────────────────────── */
+    header {
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      padding: 16px 0;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+    }
+
+    header .inner {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+
+    header h1 {
+      font-size: 1.25rem;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+    }
+
+    header h1 span { color: var(--user); }
+
+    .header-right { display: flex; align-items: center; gap: 12px; }
+
+    #refreshStatus {
+      font-size: 12px;
+      color: var(--muted);
+    }
+
+    /* ── Buttons ──────────────────────────────────────────────── */
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 7px 14px;
+      border-radius: 6px;
+      border: none;
+      cursor: pointer;
+      font-size: 13px;
+      font-weight: 600;
+      transition: opacity .15s, transform .1s;
+    }
+
+    .btn:active { transform: scale(.97); }
+    .btn:hover  { opacity: .85; }
+
+    .btn-danger  { background: var(--error);   color: #fff; }
+    .btn-primary { background: var(--user);    color: #fff; }
+    .btn-success { background: var(--commerce);color: #fff; }
+    .btn-ghost   { background: var(--border);  color: var(--text); }
+
+    /* ── Main content ─────────────────────────────────────────── */
+    main {
+      padding: 28px 0 60px;
+      display: flex;
+      flex-direction: column;
+      gap: 24px;
+    }
+
+    /* ── Pipeline diagram ─────────────────────────────────────── */
+    .pipeline-wrap { overflow-x: auto; }
+
+    .pipeline {
+      display: flex;
+      align-items: center;
+      gap: 0;
+      min-width: 600px;
+    }
+
+    .p-node {
+      flex: 1;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 14px 10px;
+      text-align: center;
+    }
+
+    .p-node .icon { font-size: 1.6rem; }
+    .p-node .label { font-weight: 700; font-size: 13px; margin: 4px 0 2px; }
+    .p-node .sub   { font-size: 11px; color: var(--muted); }
+
+    .p-arrow {
+      flex-shrink: 0;
+      width: 36px;
+      text-align: center;
+      font-size: 1.2rem;
+      color: var(--muted);
+      position: relative;
+    }
+
+    /* Animated pulse dot moving along the arrow */
+    .p-arrow::after {
+      content: '';
+      position: absolute;
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      background: var(--user);
+      top: 50%; left: 50%;
+      transform: translate(-50%, -50%);
+      animation: pulse-move 1.8s ease-in-out infinite;
+      opacity: 0;
+    }
+
+    @keyframes pulse-move {
+      0%   { opacity: 0; transform: translate(-180%, -50%); }
+      20%  { opacity: 1; }
+      80%  { opacity: 1; }
+      100% { opacity: 0; transform: translate(80%, -50%); }
+    }
+
+    /* ── Stats ────────────────────────────────────────────────── */
+    .stats {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+      gap: 14px;
+    }
+
+    .stat-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 18px 20px;
+    }
+
+    .stat-card .s-label { font-size: 12px; color: var(--muted); font-weight: 600; text-transform: uppercase; letter-spacing: .05em; }
+    .stat-card .s-value { font-size: 2.2rem; font-weight: 800; line-height: 1.1; margin-top: 4px; }
+    .stat-card.total    .s-value { color: var(--text); }
+    .stat-card.user     .s-value { color: var(--user); }
+    .stat-card.commerce .s-value { color: var(--commerce); }
+
+    /* ── Two-column layout ────────────────────────────────────── */
+    .cols {
+      display: grid;
+      grid-template-columns: 340px 1fr;
+      gap: 20px;
+      align-items: start;
+    }
+
+    @media (max-width: 760px) { .cols { grid-template-columns: 1fr; } }
+
+    /* ── Publish form ─────────────────────────────────────────── */
+    .form-title {
+      font-size: 15px;
+      font-weight: 700;
+      margin-bottom: 16px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .form-group { margin-bottom: 14px; }
+
+    label {
+      display: block;
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: .04em;
+      margin-bottom: 5px;
+    }
+
+    input, select {
+      width: 100%;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      color: var(--text);
+      padding: 8px 10px;
+      font-size: 13px;
+      outline: none;
+      transition: border-color .15s;
+    }
+
+    input:focus, select:focus { border-color: var(--user); }
+
+    #userFields, #commerceFields { display: none; }
+    #userFields.visible, #commerceFields.visible { display: block; }
+
+    #feedback {
+      margin-top: 12px;
+      padding: 10px 14px;
+      border-radius: 6px;
+      font-size: 13px;
+      display: none;
+    }
+
+    #feedback.success { background: var(--comm-dim); color: var(--success); border: 1px solid var(--commerce); }
+    #feedback.error   { background: var(--err-dim);  color: var(--error);   border: 1px solid var(--error);   }
+
+    /* ── Event feed ───────────────────────────────────────────── */
+    .feed-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 14px;
+    }
+
+    .feed-title {
+      font-size: 15px;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .live-dot {
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      background: var(--success);
+      animation: blink 1.2s ease-in-out infinite;
+    }
+
+    @keyframes blink {
+      0%, 100% { opacity: 1; }
+      50%       { opacity: .3; }
+    }
+
+    .table-wrap { overflow-x: auto; }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+    }
+
+    thead th {
+      text-align: left;
+      font-size: 11px;
+      font-weight: 700;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: .05em;
+      padding: 8px 12px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    tbody tr {
+      border-bottom: 1px solid var(--border);
+      transition: background .1s;
+    }
+
+    tbody tr:hover { background: rgba(255,255,255,.03); }
+    tbody tr:last-child { border-bottom: none; }
+
+    td { padding: 9px 12px; vertical-align: middle; }
+
+    .badge {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: .04em;
+      text-transform: uppercase;
+    }
+
+    .badge-user     { background: var(--user-dim); color: var(--user); }
+    .badge-commerce { background: var(--comm-dim); color: var(--commerce); }
+
+    .event-name { font-family: monospace; font-size: 12px; }
+    .detail     { color: var(--muted); font-size: 12px; }
+    .time-cell  { color: var(--muted); font-size: 12px; white-space: nowrap; }
+
+    .empty-row td {
+      text-align: center;
+      color: var(--muted);
+      padding: 32px;
+    }
+  </style>
+</head>
+<body>
+
+<!-- ── Header ──────────────────────────────────────────────────── -->
+<header>
+  <div class="container">
+    <div class="inner">
+      <h1>⚡ <span>Pub/Sub</span> Event Pipeline</h1>
+      <div class="header-right">
+        <span id="refreshStatus">Loading…</span>
+        <button class="btn btn-danger" onclick="pruneDB()">🗑 Prune DB</button>
+      </div>
+    </div>
+  </div>
+</header>
+
+<main>
+  <div class="container">
+
+    <!-- ── Pipeline diagram ──────────────────────────────────── -->
+    <div class="pipeline-wrap">
+      <div class="pipeline">
+        <div class="p-node">
+          <div class="icon">📤</div>
+          <div class="label">Publishers</div>
+          <div class="sub">User · Commerce<br>Gibberish</div>
+        </div>
+        <div class="p-arrow">→</div>
+        <div class="p-node">
+          <div class="icon">🔍</div>
+          <div class="label">Validator</div>
+          <div class="sub">Schema &amp; rules<br>check</div>
+        </div>
+        <div class="p-arrow">→</div>
+        <div class="p-node">
+          <div class="icon">📥</div>
+          <div class="label">Consumer</div>
+          <div class="sub">Persists valid<br>events</div>
+        </div>
+        <div class="p-arrow">→</div>
+        <div class="p-node">
+          <div class="icon">🐘</div>
+          <div class="label">PostgreSQL</div>
+          <div class="sub">events &amp;<br>properties</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Stats ─────────────────────────────────────────────── -->
+    <div class="stats">
+      <div class="stat-card total">
+        <div class="s-label">Total stored</div>
+        <div class="s-value" id="totalCount">–</div>
+      </div>
+      <div class="stat-card user">
+        <div class="s-label">User events</div>
+        <div class="s-value" id="userCount">–</div>
+      </div>
+      <div class="stat-card commerce">
+        <div class="s-label">Commerce events</div>
+        <div class="s-value" id="commerceCount">–</div>
+      </div>
+    </div>
+
+    <!-- ── Two-column: form + feed ───────────────────────────── -->
+    <div class="cols">
+
+      <!-- Publish form -->
+      <div class="card">
+        <div class="form-title">✏️ Publish an event</div>
+        <form id="publishForm" onsubmit="submitPublish(event)">
+
+          <div class="form-group">
+            <label for="eventType">Event type</label>
+            <select id="eventType" onchange="onTypeChange()" required>
+              <option value="">— select type —</option>
+              <option value="user">User event</option>
+              <option value="commerce">Commerce event</option>
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label for="eventName">Event name</label>
+            <select id="eventName" required>
+              <option value="">— select event type first —</option>
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label for="userId">User ID</label>
+            <input id="userId" type="text" placeholder="e.g. user_001" required />
+          </div>
+
+          <!-- User-specific fields -->
+          <div id="userFields">
+            <div class="form-group">
+              <label for="total">Total ($)</label>
+              <input id="total" type="number" step="0.01" placeholder="e.g. 49.99" />
+            </div>
+            <div class="form-group">
+              <label for="page">Page</label>
+              <input id="page" type="text" placeholder="e.g. /home" />
+            </div>
+          </div>
+
+          <!-- Commerce-specific fields -->
+          <div id="commerceFields">
+            <div class="form-group">
+              <label for="path">Path</label>
+              <input id="path" type="text" placeholder="e.g. /pricing" />
+            </div>
+          </div>
+
+          <button type="submit" class="btn btn-primary" style="width:100%">Send event →</button>
+        </form>
+
+        <div id="feedback"></div>
+      </div>
+
+      <!-- Live event feed -->
+      <div class="card">
+        <div class="feed-header">
+          <div class="feed-title">
+            <div class="live-dot"></div>
+            Live event feed
+          </div>
+          <span style="font-size:12px; color:var(--muted)">auto-refreshes every 2 s</span>
+        </div>
+
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Type</th>
+                <th>Event</th>
+                <th>User</th>
+                <th>Details</th>
+                <th>Time</th>
+              </tr>
+            </thead>
+            <tbody id="eventBody">
+              <tr class="empty-row"><td colspan="5">Loading events…</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+    </div><!-- /cols -->
+  </div><!-- /container -->
+</main>
+
+<script>
+  /* ── Constants ──────────────────────────────────────────────── */
+  const REFRESH_MS = 2000;
+
+  const USER_EVENTS     = ['user.signed_up', 'feature.clicked'];
+  const COMMERCE_EVENTS = ['page.viewed', 'page.scrolled', 'order.placed', 'payment.failed'];
+
+  /* ── Type selector ──────────────────────────────────────────── */
+  function onTypeChange() {
+    const type  = document.getElementById('eventType').value;
+    const names = document.getElementById('eventName');
+    const uF    = document.getElementById('userFields');
+    const cF    = document.getElementById('commerceFields');
+
+    // Reset event name options
+    names.innerHTML = '';
+
+    if (type === 'user') {
+      USER_EVENTS.forEach(v => {
+        const opt = document.createElement('option');
+        opt.value = v; opt.textContent = v;
+        names.appendChild(opt);
+      });
+      uF.classList.add('visible');
+      cF.classList.remove('visible');
+    } else if (type === 'commerce') {
+      COMMERCE_EVENTS.forEach(v => {
+        const opt = document.createElement('option');
+        opt.value = v; opt.textContent = v;
+        names.appendChild(opt);
+      });
+      cF.classList.add('visible');
+      uF.classList.remove('visible');
+    } else {
+      const placeholder = document.createElement('option');
+      placeholder.value = ''; placeholder.textContent = '— select event type first —';
+      names.appendChild(placeholder);
+      uF.classList.remove('visible');
+      cF.classList.remove('visible');
+    }
+  }
+
+  /* ── Publish form ───────────────────────────────────────────── */
+  async function submitPublish(e) {
+    e.preventDefault();
+    const type = document.getElementById('eventType').value;
+
+    const payload = {
+      type,
+      event:   document.getElementById('eventName').value,
+      user_id: document.getElementById('userId').value,
+    };
+
+    if (type === 'user') {
+      payload.total = parseFloat(document.getElementById('total').value) || 0;
+      payload.page  = document.getElementById('page').value || '/';
+    } else {
+      payload.path = document.getElementById('path').value || '/';
+    }
+
+    try {
+      const resp = await fetch('/publish', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify(payload),
+      });
+      const result = await resp.json();
+
+      if (resp.ok) {
+        showFeedback('success', '✅ Event published successfully!');
+        fetchEvents();
+      } else {
+        showFeedback('error', '❌ ' + (result.error || 'Unknown error'));
+      }
+    } catch (err) {
+      showFeedback('error', '❌ Network error: ' + err.message);
+    }
+  }
+
+  function showFeedback(type, msg) {
+    const el = document.getElementById('feedback');
+    el.className = type;
+    el.textContent = msg;
+    el.style.display = 'block';
+    clearTimeout(el._timer);
+    el._timer = setTimeout(() => { el.style.display = 'none'; }, 5000);
+  }
+
+  /* ── Prune ──────────────────────────────────────────────────── */
+  async function pruneDB() {
+    if (!confirm('Delete ALL stored events? This cannot be undone.')) return;
+    try {
+      const resp = await fetch('/prune');
+      if (resp.ok) {
+        showFeedback('success', '🗑 Database pruned – all events deleted.');
+        fetchEvents();
+      } else {
+        showFeedback('error', '❌ Prune failed.');
+      }
+    } catch (err) {
+      showFeedback('error', '❌ Network error: ' + err.message);
+    }
+  }
+
+  /* ── Events polling ─────────────────────────────────────────── */
+  async function fetchEvents() {
+    try {
+      const resp = await fetch('/events');
+      if (!resp.ok) throw new Error('HTTP ' + resp.status);
+      const data = await resp.json();
+      renderStats(data.events || []);
+      renderTable(data.events || []);
+      document.getElementById('refreshStatus').textContent =
+        'Updated ' + new Date().toLocaleTimeString();
+    } catch (err) {
+      document.getElementById('refreshStatus').textContent = '⚠ fetch error';
+    }
+  }
+
+  function renderStats(events) {
+    document.getElementById('totalCount').textContent    = events.length;
+    document.getElementById('userCount').textContent     = events.filter(e => e.type === 'USER_EVENT').length;
+    document.getElementById('commerceCount').textContent = events.filter(e => e.type === 'COMMERCE_EVENT').length;
+  }
+
+  function renderTable(events) {
+    const tbody = document.getElementById('eventBody');
+
+    if (events.length === 0) {
+      tbody.innerHTML = '<tr class="empty-row"><td colspan="5">No events stored yet — publishers are running in the background.</td></tr>';
+      return;
+    }
+
+    tbody.innerHTML = events.map(e => {
+      const isUser    = e.type === 'USER_EVENT';
+      const badgeCls  = isUser ? 'badge-user' : 'badge-commerce';
+      const badgeTxt  = isUser ? 'User' : 'Commerce';
+      const detail    = isUser
+        ? (e.total != null ? '$' + e.total.toFixed(2) : '') + (e.page ? ' · ' + e.page : '')
+        : (e.path || '');
+
+      return `
+        <tr>
+          <td><span class="badge ${badgeCls}">${badgeTxt}</span></td>
+          <td class="event-name">${esc(e.event)}</td>
+          <td>${esc(e.user_id)}</td>
+          <td class="detail">${esc(detail)}</td>
+          <td class="time-cell">${formatTime(e.created_at)}</td>
+        </tr>`;
+    }).join('');
+  }
+
+  /* ── Helpers ────────────────────────────────────────────────── */
+  function formatTime(ts) {
+    return new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  }
+
+  /** Escape HTML to prevent XSS in rendered table cells. */
+  function esc(str) {
+    if (!str) return '';
+    return String(str)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  }
+
+  /* ── Boot ───────────────────────────────────────────────────── */
+  fetchEvents();
+  setInterval(fetchEvents, REFRESH_MS);
+</script>
+</body>
+</html>
